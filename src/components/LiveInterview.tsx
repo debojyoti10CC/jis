@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Video, Eye, AlertCircle, Clock, Mic, MicOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Video, Eye, AlertCircle, Clock, Mic, MicOff, ChevronLeft, ChevronRight, Shield, Zap, Brain, Code2, AlertTriangle } from 'lucide-react';
 
 interface LiveInterviewProps {
   onComplete: (score: number) => void;
@@ -27,6 +27,8 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
   const [showResults, setShowResults] = useState(false);
   const [isDisqualified, setIsDisqualified] = useState(false);
   const [disqualificationReason, setDisqualificationReason] = useState('');
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+  const [showViolationsPanel, setShowViolationsPanel] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Simplified monitoring states
@@ -38,6 +40,8 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
   
   const [faceNotCompleteTimer, setFaceNotCompleteTimer] = useState(0);
   const [violations, setViolations] = useState<string[]>([]);
+  const [criticalViolations, setCriticalViolations] = useState<string[]>([]);
+  const [warningViolations, setWarningViolations] = useState<string[]>([]);
 
   // 10 DSA Coding Questions
   const questions = [
@@ -127,7 +131,20 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
     }, 3000);
   };
 
-  // Simulate monitoring - only face detection matters for disqualification
+  const flagViolation = (violation: string, type: 'critical' | 'warning') => {
+    const timestamp = new Date().toLocaleTimeString();
+    const violationWithTime = `${timestamp}: ${violation}`;
+    
+    if (type === 'critical') {
+      setCriticalViolations(prev => [...prev, violationWithTime]);
+    } else {
+      setWarningViolations(prev => [...prev, violationWithTime]);
+    }
+    
+    setViolations(prev => [...prev, violationWithTime]);
+  };
+
+  // Simulate monitoring - flag violations instead of immediate disqualification
   const simulateMonitoring = () => {
     const eyeStates: MonitoringData['eyeTracking'][] = ['good', 'good', 'good', 'warning', 'alert'];
     const faceVisibilityStates: MonitoringData['faceVisibility'][] = ['complete', 'complete', 'complete', 'partial', 'not_visible'];
@@ -145,54 +162,27 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
 
     setMonitoringData(newMonitoringData);
 
-    // CRITICAL DISQUALIFICATION CRITERIA - Only face-related violations
+    // FLAG VIOLATIONS INSTEAD OF IMMEDIATE DISQUALIFICATION
     
-    // 1. Multiple faces detected - IMMEDIATE DISQUALIFICATION
+    // 1. Multiple faces detected - CRITICAL VIOLATION
     if (newFaceCount > 1) {
-      const violation = `Multiple faces detected (${newFaceCount} faces) - CRITICAL`;
-      setViolations(prev => [...prev, violation]);
-      handleDisqualification('Multiple faces detected in the frame');
-      return;
+      flagViolation(`Multiple faces detected (${newFaceCount} faces)`, 'critical');
     }
 
-    // 2. No face or face not visible - Timer-based disqualification (10 seconds)
-    if (newFaceCount === 0 || newFaceVisibility === 'not_visible') {
-      setFaceNotCompleteTimer(prev => {
-        const newTimer = prev + 1;
-        if (newTimer >= 5) { // 10 seconds (since this runs every 2 seconds, 5 * 2 = 10)
-          const reason = newFaceCount === 0 
-            ? 'No face detected for more than 10 seconds'
-            : 'Face not visible for more than 10 seconds';
-          handleDisqualification(reason);
-          return 0;
-        }
-        return newTimer;
-      });
-      
-      // Log violations but don't disqualify immediately
-      if (newFaceCount === 0) {
-        setViolations(prev => [...prev, 'No face detected - WARNING']);
-      } else if (newFaceVisibility === 'not_visible') {
-        setViolations(prev => [...prev, 'Face not visible - WARNING']);
-      }
-    } 
-    // 3. Partial face visibility - Reset timer but log violation (NOT disqualifying)
-    else if (newFaceVisibility === 'partial') {
-      setFaceNotCompleteTimer(0); // Reset timer - partial face is acceptable
-      setViolations(prev => [...prev, 'Partial face visibility - MONITORED (No disqualification)']);
-    }
-    // 4. Complete face and single person - Reset timer and all is good
-    else {
-      setFaceNotCompleteTimer(0); // Reset timer when face is complete and single
+    // 2. No face or face not visible - WARNING VIOLATION
+    if (newFaceCount === 0) {
+      flagViolation('No face detected', 'warning');
+    } else if (newFaceVisibility === 'not_visible') {
+      flagViolation('Face not visible', 'warning');
+    } else if (newFaceVisibility === 'partial') {
+      flagViolation('Partial face visibility', 'warning');
     }
 
-    // NON-DISQUALIFYING VIOLATIONS - Just log for monitoring
-    
-    // Eye tracking violations - log but NEVER disqualify
+    // 3. Eye tracking violations - WARNING VIOLATIONS
     if (newEyeTracking === 'alert') {
-      setViolations(prev => [...prev, 'Looking away from screen - MONITORED (No disqualification)']);
+      flagViolation('Looking away from screen', 'warning');
     } else if (newEyeTracking === 'warning') {
-      setViolations(prev => [...prev, 'Distracted behavior - MONITORED (No disqualification)']);
+      flagViolation('Distracted behavior detected', 'warning');
     }
   };
 
@@ -243,6 +233,23 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
     }, 3000);
   };
 
+  const handleBackClick = () => {
+    if (isStarted && Object.keys(answers).length > 0) {
+      setShowExitConfirmation(true);
+    } else {
+      onBack();
+    }
+  };
+
+  const handleConfirmExit = () => {
+    setShowExitConfirmation(false);
+    onBack();
+  };
+
+  const handleCancelExit = () => {
+    setShowExitConfirmation(false);
+  };
+
   const getFaceStatusBadgeVariant = () => {
     if (monitoringData.faceCount === 1 && monitoringData.faceVisibility === 'complete') {
       return 'default'; // Green - good
@@ -263,119 +270,233 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
     return `${monitoringData.faceCount} Faces Detected`;
   };
 
-  // Disqualification Screen
-  if (isDisqualified) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-100 to-red-200 flex items-center justify-center">
-        <Card className="w-full max-w-2xl mx-4 border-red-500">
-          <CardHeader className="text-center bg-red-50">
-            <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertCircle className="w-8 h-8 text-white" />
-            </div>
-            <CardTitle className="text-2xl text-red-800">Interview Terminated</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center space-y-4 pt-6">
-            <div className="text-xl font-semibold text-red-700">DISQUALIFIED</div>
-            <p className="text-red-600 font-medium">{disqualificationReason}</p>
-            <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-              <h4 className="font-semibold text-red-800 mb-2">Violation Details:</h4>
-              <ul className="text-red-700 text-sm space-y-1 text-left">
-                {violations.slice(-5).map((violation, index) => (
-                  <li key={index}>• {violation}</li>
-                ))}
-              </ul>
-            </div>
-            <p className="text-sm text-red-600">
-              Your interview has been terminated due to critical face detection violations. Final Score: 0/100
-            </p>
-            <Button onClick={onBack} variant="outline" className="mt-4">
-              Return to Dashboard
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   if (showResults) {
     const { totalScore, maxScore } = calculateScore();
     const percentage = Math.round((totalScore / maxScore) * 100);
     
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-red-50 flex items-center justify-center">
-        <Card className="w-full max-w-2xl mx-4">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Live Interview Results</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center space-y-4">
-            <div className="text-6xl font-bold text-red-600">{percentage}%</div>
-            <p className="text-xl">Score: {totalScore}/{maxScore}</p>
-            <p className="text-slate-600">
-              {percentage >= 70 ? 'Outstanding coding skills!' : 
-               percentage >= 50 ? 'Good problem-solving ability!' : 'Keep practicing DSA!'}
-            </p>
-            <div className="bg-slate-50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Proctoring Summary:</h4>
-              <p className="text-sm text-slate-600">{violations.length} monitoring events detected during the interview</p>
-              <p className="text-xs text-green-600 mt-1">✓ No critical violations - Interview completed successfully</p>
+      <div className="min-h-screen bg-gradient-to-br from-emerald-600 via-teal-800 to-cyan-900 flex items-center justify-center p-4">
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute top-1/2 -right-10 w-60 h-60 bg-teal-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+          <div className="absolute -bottom-10 left-1/2 w-80 h-80 bg-cyan-500/20 rounded-full blur-3xl animate-pulse delay-2000"></div>
+        </div>
+
+        <div className="relative backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 max-w-4xl w-full shadow-2xl">
+          <div className="text-center space-y-6">
+            <div className="relative">
+              <div className="w-20 h-20 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/50">
+                <Brain className="w-10 h-10 text-white" />
+              </div>
+              <div className="absolute inset-0 w-20 h-20 bg-emerald-500/30 rounded-full blur-xl mx-auto animate-ping"></div>
             </div>
-          </CardContent>
-        </Card>
+            
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-emerald-300 to-cyan-300 bg-clip-text text-transparent">
+              Interview Complete
+            </h1>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Score Section */}
+              <div className="space-y-6">
+                <div className="relative">
+                  <div className="text-8xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+                    {percentage}%
+                  </div>
+                  <div className="absolute inset-0 text-8xl font-bold text-emerald-400/20 blur-sm">
+                    {percentage}%
+                  </div>
+                </div>
+                
+                <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6">
+                  <p className="text-2xl font-semibold text-white mb-2">
+                    Score: {totalScore}/{maxScore}
+                  </p>
+                  <p className="text-emerald-200">
+                    {percentage >= 70 ? '🚀 Outstanding coding skills!' : 
+                     percentage >= 50 ? '⭐ Good problem-solving ability!' : '📚 Keep practicing DSA!'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Violations Report */}
+              <div className="space-y-6">
+                <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6">
+                  <h4 className="font-semibold text-white mb-4 flex items-center justify-center gap-2">
+                    <Shield className="w-5 h-5" />
+                    Proctoring Report
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    {/* Critical Violations */}
+                    {criticalViolations.length > 0 && (
+                      <div className="bg-red-500/10 border border-red-400/30 rounded-lg p-4">
+                        <h5 className="font-semibold text-red-300 mb-2 flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4" />
+                          Critical Violations ({criticalViolations.length})
+                        </h5>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {criticalViolations.slice(-5).map((violation, index) => (
+                            <div key={index} className="text-red-200/80 text-sm bg-red-500/10 rounded px-2 py-1">
+                              • {violation}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Warning Violations */}
+                    {warningViolations.length > 0 && (
+                      <div className="bg-yellow-500/10 border border-yellow-400/30 rounded-lg p-4">
+                        <h5 className="font-semibold text-yellow-300 mb-2 flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4" />
+                          Warning Violations ({warningViolations.length})
+                        </h5>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {warningViolations.slice(-5).map((violation, index) => (
+                            <div key={index} className="text-yellow-200/80 text-sm bg-yellow-500/10 rounded px-2 py-1">
+                              • {violation}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No Violations */}
+                    {criticalViolations.length === 0 && warningViolations.length === 0 && (
+                      <div className="bg-green-500/10 border border-green-400/30 rounded-lg p-4">
+                        <div className="flex items-center justify-center gap-2 text-green-300">
+                          <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                          <span className="font-medium">No violations detected</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Summary */}
+                    <div className="bg-slate-500/10 border border-slate-400/30 rounded-lg p-4">
+                      <div className="flex justify-between text-sm text-slate-300">
+                        <span>Total Monitoring Events:</span>
+                        <span className="font-medium">{violations.length}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-slate-300">
+                        <span>Interview Duration:</span>
+                        <span className="font-medium">{Math.floor((2700 - timeLeft) / 60)}m {Math.floor((2700 - timeLeft) % 60)}s</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Button 
+              onClick={onBack} 
+              className="bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white border-0 rounded-xl px-8 py-3 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Return to Dashboard
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!isStarted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-red-50 flex items-center justify-center">
-        <Card className="w-full max-w-2xl mx-4">
-          <CardHeader className="text-center">
-            <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Video className="w-8 h-8 text-white" />
-            </div>
-            <CardTitle className="text-2xl">Live Proctored Interview</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="bg-red-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-red-800 mb-2">Requirements:</h3>
-              <ul className="text-red-700 text-sm space-y-1">
-                <li>• Camera access required for proctoring</li>
-                <li>• Microphone access for verbal responses</li>
-                <li>• Face detection monitoring</li>
-                <li>• Eye tracking monitoring (informational only)</li>
-                <li>• Screen recording is optional</li>
-                <li>• Duration: 45 minutes</li>
-              </ul>
-            </div>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center p-4">
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute top-1/2 -right-10 w-60 h-60 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+          <div className="absolute -bottom-10 left-1/2 w-80 h-80 bg-pink-500/20 rounded-full blur-3xl animate-pulse delay-2000"></div>
+        </div>
 
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <div className="flex items-start space-x-2">
-                <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
-                <div>
-                  <h4 className="font-medium text-amber-800">Disqualification Rules (Only 2 Rules)</h4>
-                  <ul className="text-amber-700 text-sm mt-1 space-y-1">
-                    <li>• <strong>Multiple faces detected = Immediate disqualification</strong></li>
-                    <li>• <strong>No face visible for {'>'}10 seconds = Disqualification</strong></li>
-                    <li>• ✓ Partial face visibility is acceptable</li>
-                    <li>• ✓ Any facial expression is allowed</li>
-                    <li>• ✓ Eye tracking violations are monitored only</li>
-                    <li>• ✓ All other behaviors are monitored but won't disqualify</li>
-                  </ul>
+        <div className="relative backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 max-w-2xl w-full shadow-2xl">
+          <div className="text-center space-y-6">
+            <div className="relative">
+              <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/50">
+                <Video className="w-10 h-10 text-white" />
+              </div>
+              <div className="absolute inset-0 w-20 h-20 bg-indigo-500/30 rounded-full blur-xl mx-auto animate-ping"></div>
+            </div>
+            
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-300 to-pink-300 bg-clip-text text-transparent">
+              Live Proctored Interview
+            </h1>
+
+            <div className="space-y-6">
+              <div className="backdrop-blur-xl bg-indigo-500/10 border border-indigo-300/20 rounded-2xl p-6">
+                <h3 className="font-semibold text-indigo-300 mb-4 flex items-center justify-center gap-2">
+                  <Zap className="w-5 h-5" />
+                  System Requirements
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="flex items-center gap-2 text-indigo-200/80">
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full"></div>
+                    Camera access required
+                  </div>
+                  <div className="flex items-center gap-2 text-indigo-200/80">
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full"></div>
+                    Microphone access
+                  </div>
+                  <div className="flex items-center gap-2 text-indigo-200/80">
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full"></div>
+                    Face detection monitoring
+                  </div>
+                  <div className="flex items-center gap-2 text-indigo-200/80">
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full"></div>
+                    Duration: 45 minutes
+                  </div>
+                </div>
+              </div>
+
+              <div className="backdrop-blur-xl bg-amber-500/10 border border-amber-300/20 rounded-2xl p-6">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-6 h-6 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-amber-300">Critical Disqualification Rules</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2 text-amber-200/80">
+                        <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                        <strong>Multiple faces detected = Immediate disqualification</strong>
+                      </div>
+                      <div className="flex items-center gap-2 text-amber-200/80">
+                        <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                        <strong>No face visible for &gt;10 seconds = Disqualification</strong>
+                      </div>
+                      <div className="flex items-center gap-2 text-green-300/80">
+                        <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                        Partial face visibility is acceptable
+                      </div>
+                      <div className="flex items-center gap-2 text-green-300/80">
+                        <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                        Eye tracking violations are monitored only
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
             
-            <div className="flex space-x-4">
-              <Button variant="outline" onClick={onBack} className="flex-1">
+            <div className="flex gap-4">
+              <Button 
+                onClick={handleBackClick} 
+                variant="outline" 
+                className="flex-1 bg-white/5 border-white/20 text-white hover:bg-white/10 rounded-xl backdrop-blur-sm transition-all duration-300"
+              >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Dashboard
               </Button>
-              <Button onClick={() => setIsStarted(true)} className="flex-1 bg-red-500 hover:bg-red-600">
+              <Button 
+                onClick={() => setIsStarted(true)} 
+                className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white border-0 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+              >
+                <Code2 className="w-4 h-4 mr-2" />
                 Start Interview
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     );
   }
@@ -385,33 +506,49 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
   const answeredCount = Object.keys(answers).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-red-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Animated background elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute top-1/2 -right-10 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute -bottom-10 left-1/2 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl animate-pulse delay-2000"></div>
+      </div>
+
       {/* Header */}
-      <header className="bg-white/90 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-50">
+      <header className="relative backdrop-blur-xl bg-white/5 border-b border-white/10 sticky top-0 z-50">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Badge variant="destructive">LIVE INTERVIEW</Badge>
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                <span className="text-sm text-slate-600">Recording</span>
+              <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500/20 to-pink-500/20 rounded-full border border-red-300/30 backdrop-blur-sm">
+                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+                <span className="text-red-200 font-medium text-sm">LIVE INTERVIEW</span>
               </div>
-              <span className="text-sm text-slate-600">
+              
+              <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full backdrop-blur-sm border border-white/10">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-white/70 text-sm">Recording</span>
+              </div>
+              
+              <span className="text-white/60 text-sm">
                 Question {currentQuestion + 1} of {questions.length}
               </span>
             </div>
             
             <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2 text-slate-600">
-                <Clock className="w-4 h-4" />
-                <span className={`font-mono text-lg ${timeLeft < 300 ? 'text-red-500 font-bold' : ''}`}>
+              <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full backdrop-blur-sm border border-white/10">
+                <Clock className="w-4 h-4 text-white/70" />
+                <span className={`font-mono text-lg font-bold ${timeLeft < 300 ? 'text-red-400' : 'text-white'}`}>
                   {formatTime(timeLeft)}
                 </span>
               </div>
 
-              <Badge variant={answeredCount === questions.length ? "default" : "secondary"}>
-                {answeredCount}/{questions.length} Solved
-              </Badge>
+              <div className={`px-4 py-2 rounded-full backdrop-blur-sm border ${
+                answeredCount === questions.length 
+                  ? 'bg-emerald-500/20 border-emerald-300/30 text-emerald-200' 
+                  : 'bg-white/5 border-white/10 text-white/70'
+              }`}>
+                <span className="font-medium">{answeredCount}/{questions.length} Solved</span>
+              </div>
             </div>
           </div>
         </div>
@@ -449,22 +586,6 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
                     <span className="text-white text-xs">LIVE</span>
                   </div>
                 </div>
-                
-                {/* Face visibility warning - only for critical violations */}
-                {(monitoringData.faceCount === 0 || monitoringData.faceCount > 1 || monitoringData.faceVisibility === 'not_visible') && (
-                  <div className="absolute top-3 left-3 right-3">
-                    <div className="bg-red-500/80 text-white px-3 py-2 rounded text-sm font-medium">
-                      {monitoringData.faceCount === 0 
-                        ? `No face detected - WARNING (${faceNotCompleteTimer * 2}s)`
-                        : monitoringData.faceCount > 1
-                        ? `CRITICAL: Multiple faces detected (${monitoringData.faceCount})`
-                        : monitoringData.faceVisibility === 'not_visible'
-                        ? `Face not visible - WARNING (${faceNotCompleteTimer * 2}s)`
-                        : ''
-                      }
-                    </div>
-                  </div>
-                )}
               </div>
               
               {/* Simplified Monitoring Display */}
@@ -491,9 +612,23 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
 
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Monitoring Events</span>
-                  <Badge variant={violations.length === 0 ? 'default' : 'secondary'}>
-                    {violations.length}
-                  </Badge>
+                  <div className="flex space-x-1">
+                    {criticalViolations.length > 0 && (
+                      <Badge variant="destructive" className="text-xs">
+                        {criticalViolations.length} Critical
+                      </Badge>
+                    )}
+                    {warningViolations.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {warningViolations.length} Warnings
+                      </Badge>
+                    )}
+                    {criticalViolations.length === 0 && warningViolations.length === 0 && (
+                      <Badge variant="default" className="text-xs">
+                        Clean
+                      </Badge>
+                    )}
+                  </div>
                 </div>
 
                 {/* Status indicator */}
@@ -522,7 +657,7 @@ const LiveInterview = ({ onComplete, onBack }: LiveInterviewProps) => {
                     onCheckedChange={setScreenRecording}
                   />
                 </div>
-                <Button variant="outline" onClick={onBack} className="w-full">
+                <Button variant="outline" onClick={handleBackClick} className="w-full">
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to Dashboard
                 </Button>
@@ -605,6 +740,116 @@ def solution():
           </Card>
         </div>
       </div>
+
+      {/* Floating Violations Panel */}
+      {isStarted && (
+        <div className="fixed bottom-4 right-4 z-40">
+          <Button
+            onClick={() => setShowViolationsPanel(!showViolationsPanel)}
+            className="bg-red-500 hover:bg-red-600 text-white shadow-lg"
+          >
+            <AlertCircle className="w-4 h-4 mr-2" />
+            Violations ({criticalViolations.length + warningViolations.length})
+          </Button>
+          
+          {showViolationsPanel && (
+            <Card className="absolute bottom-12 right-0 w-80 max-h-96 bg-white shadow-xl border border-red-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span>Real-time Violations</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowViolationsPanel(false)}
+                    className="h-6 w-6 p-0"
+                  >
+                    ×
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 max-h-64 overflow-y-auto">
+                {criticalViolations.length === 0 && warningViolations.length === 0 ? (
+                  <div className="text-center text-green-600 text-sm py-4">
+                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      ✓
+                    </div>
+                    No violations detected
+                  </div>
+                ) : (
+                  <>
+                    {criticalViolations.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-red-600 text-sm flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Critical ({criticalViolations.length})
+                        </h4>
+                        <div className="space-y-1">
+                          {criticalViolations.slice(-3).map((violation, index) => (
+                            <div key={index} className="text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
+                              {violation}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {warningViolations.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-yellow-600 text-sm flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Warnings ({warningViolations.length})
+                        </h4>
+                        <div className="space-y-1">
+                          {warningViolations.slice(-3).map((violation, index) => (
+                            <div key={index} className="text-xs bg-yellow-50 text-yellow-700 p-2 rounded border border-yellow-200">
+                              {violation}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Exit Confirmation Dialog */}
+      {showExitConfirmation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4 bg-white">
+            <CardHeader className="text-center">
+              <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-white" />
+              </div>
+              <CardTitle className="text-xl">Leave Interview?</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-slate-600 text-center">
+                You have answered {Object.keys(answers).length} questions. 
+                Are you sure you want to leave? Your progress will be lost.
+              </p>
+              <div className="flex space-x-3">
+                <Button 
+                  variant="outline" 
+                  onClick={handleCancelExit} 
+                  className="flex-1"
+                >
+                  Continue Interview
+                </Button>
+                <Button 
+                  onClick={handleConfirmExit} 
+                  className="flex-1 bg-red-500 hover:bg-red-600"
+                >
+                  Leave Interview
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

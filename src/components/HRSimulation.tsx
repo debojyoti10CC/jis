@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ArrowLeft, MessageSquare, Mic, MicOff, Clock, Send, Bot, Camera, Eye, Smile, Frown, Meh } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Mic, MicOff, Clock, Send, Bot, Camera, Eye, Smile, Frown, Meh, AlertTriangle } from 'lucide-react';
 
 interface HRSimulationProps {
   onComplete: () => void;
@@ -28,6 +28,7 @@ const HRSimulation = ({ onComplete, onBack, candidateInfo, role }: HRSimulationP
   const [clarity, setClarty] = useState(80);
   const [relevance, setRelevance] = useState(70);
   const [faceExpression, setFaceExpression] = useState<'happy' | 'neutral' | 'concerned'>('neutral');
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const typingStartTime = useRef<number>(0);
@@ -169,6 +170,23 @@ const HRSimulation = ({ onComplete, onBack, candidateInfo, role }: HRSimulationP
     onComplete();
   };
 
+  const handleBackClick = () => {
+    if (isStarted && responses.length > 0) {
+      setShowExitConfirmation(true);
+    } else {
+      onBack();
+    }
+  };
+
+  const handleConfirmExit = () => {
+    setShowExitConfirmation(false);
+    onBack();
+  };
+
+  const handleCancelExit = () => {
+    setShowExitConfirmation(false);
+  };
+
   const toggleListening = () => {
     setIsListening(!isListening);
   };
@@ -217,7 +235,7 @@ const HRSimulation = ({ onComplete, onBack, candidateInfo, role }: HRSimulationP
             </div>
             
             <div className="flex space-x-4">
-              <Button variant="outline" onClick={onBack} className="flex-1">
+              <Button variant="outline" onClick={handleBackClick} className="flex-1">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Dashboard
               </Button>
@@ -264,7 +282,7 @@ const HRSimulation = ({ onComplete, onBack, candidateInfo, role }: HRSimulationP
       <div className="container mx-auto px-6 py-8">
         {/* Back to Dashboard Button */}
         <div className="mb-4 flex">
-          <Button variant="outline" onClick={onBack} className="border-gray-600 dark:border-slate-600 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-slate-700">
+          <Button variant="outline" onClick={handleBackClick} className="border-gray-600 dark:border-slate-600 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-slate-700">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Dashboard
           </Button>
@@ -434,6 +452,41 @@ const HRSimulation = ({ onComplete, onBack, candidateInfo, role }: HRSimulationP
           </div>
         </div>
       </div>
+
+      {/* Exit Confirmation Dialog */}
+      {showExitConfirmation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4 bg-white">
+            <CardHeader className="text-center">
+              <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-white" />
+              </div>
+              <CardTitle className="text-xl">Leave Interview?</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-slate-600 text-center">
+                You have answered {responses.filter(r => r && r.trim()).length} questions. 
+                Are you sure you want to leave? Your progress will be lost.
+              </p>
+              <div className="flex space-x-3">
+                <Button 
+                  variant="outline" 
+                  onClick={handleCancelExit} 
+                  className="flex-1"
+                >
+                  Continue Interview
+                </Button>
+                <Button 
+                  onClick={handleConfirmExit} 
+                  className="flex-1 bg-red-500 hover:bg-red-600"
+                >
+                  Leave Interview
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };
